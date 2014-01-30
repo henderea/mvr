@@ -40,6 +40,8 @@ if options[:override_colors] && File.exist?(config_file)
   color_opts = YAML::load_file(config_file)
 end
 
+color_opts.each { |opt| Format.color_profile opt[0], fgcolor: opt[1][:fg], bgcolor: opt[1][:bg] }
+
 pattern = ARGV.shift
 if pattern == 'help' || pattern == '--help' || pattern == '-h'
   puts 'NAME'.format_bold
@@ -121,16 +123,16 @@ mappings.each do |from, to|
   from2 = from.center(len1)
   to2   = to.center(len2)
   if from == to
-    from2 = Format::colorize(from2, color_opts[:same][:fg], color_opts[:same][:bg])
-    to2   = Format::colorize(to2, color_opts[:same][:fg], color_opts[:same][:bg])
+    from2 = "{#{from2}}(:same)"
+    to2   = "{#{to2}}(:same)"
   elsif duplicated.include?(to)
-    from2 = Format::colorize(from2, color_opts[:conflict][:fg], color_opts[:conflict][:bg])
-    to2   = Format::colorize(to2, color_opts[:conflict][:fg], color_opts[:conflict][:bg])
+    from2 = "{#{from2}}(:conflict)"
+    to2   = "{#{to2}}(:conflict)"
   else
-    from2 = Format::colorize(from2, color_opts[:normal][:fg], color_opts[:normal][:bg])
-    to2   = Format::colorize(to2, color_opts[:normal][:fg], color_opts[:normal][:bg])
+    from2 = "{#{from2}}(:normal)"
+    to2   = "{#{to2}}(:normal)"
   end
-  puts "| #{from2} | #{to2} |"
+  puts "| #{from2} | #{to2} |".format_all
 end
 
 puts border
