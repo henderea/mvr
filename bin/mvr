@@ -7,57 +7,89 @@ require 'everyday-cli-utils'
 include EverydayCliUtils
 import :format, :option
 
-options = {
-    exclude_extension: false,
-    override_colors:   false,
-}
+#noinspection RubyResolve
+require 'mvr/plugin'
 
-option_parser = OptionParser.new { |opts|
-  Option::add_option(options, opts, %w(-e --exclude-extension), :exclude_extension)
-  Option::add_option(options, opts, %w(-v --override-colors), :override_colors)
-}
+require 'everyday-plugins'
+include EverydayPlugins
 
-option_parser.parse!
+Plugins.load_plugins 'mvr'
 
-color_opts = {
-    normal:   {
-        fg: :none,
-        bg: :none,
-    },
-    same:     {
-        fg: :black,
-        bg: :white,
-    },
-    conflict: {
-        fg: :white,
-        bg: :red,
-    },
-}
+def help_str
+  str = <<eos
+{NAME}(bd)
+    {mvr}(bdfpu) -- Renames a group of files and/or folders using a regular expression
 
-config_file = File.expand_path('~/mvr-colors.yaml')
+{SYNOPSIS}(bd)
+    {mvr}(bdfpu) [options] <{find}(ulfcy)> <{replace}(ulfcy)> {file ...}(fcy)
 
-if options[:override_colors] && File.exist?(config_file)
-  color_opts = YAML::load_file(config_file)
+{DESCRIPTION}(bd)
+    {mvr}(bdfpu) is a Ruby script that allows you to rename a group of files and/or folders using a regular expression.
+    The {find}(ulfcy) parameter uses normal regular expression syntax (there might be Ruby-specific things, but I doubt it).
+    The {replace}(ulfcy) parameter is plain text, using {\\#}(fgr) to insert capture group {#}(fgr) (so {\\1}(fgr) to insert the first capture group).
+    The list of files can be as many items as you want, and you can use typical wildcard expressions.
+    Any parameter after {replace}(ulfcy) will be interpreted as a file/folder name that should be included in the list of what to rename.
+
+    Parameters:
+    <{find}(ulfcy)>     The regular expression for the renaming
+    <{replace}(ulfcy)>  The text to replace what the regular expression matches (use {\\#}(fgr) to insert capture group {#}(fgr) (so {\\1}(fgr) to insert the first capture group))
+    {file ...}(fcy)   The list of files and/or folders to rename
+
+    Options:
+#{MyOptions.opts.summarize.join}
+eos
+  str.format_all
 end
 
-color_opts.each { |opt| Format.color_profile opt[0], fgcolor: opt[1][:fg], bgcolor: opt[1][:bg] }
+class MyOptions
+  extend OptionUtil
+
+  help_option %w(-h --help), desc: 'print out this help'
+
+  #option :exclude_extension, %w(-e --exclude-extension), desc: 'remove the file extension before doing the rename operation.  the extension will be added back on after renaming.'
+  option :override_colors, %w(-v --override-colors), desc: 'override the colors with the ones configured by the colorconfig script'
+end
+
+Plugins.get :option, MyOptions
+Plugins.get :option_with_param, MyOptions
+
+MyOptions.help_str = help_str
+
+MyOptions.parse!
+
+options = MyOptions.options
+
+Plugins.set_var :options, options
+
+#color_opts = {
+#    normal:   {
+#        fg: :none,
+#        bg: :none,
+#    },
+#    same:     {
+#        fg: :black,
+#        bg: :white,
+#    },
+#    conflict: {
+#        fg: :white,
+#        bg: :red,
+#    },
+#}
+#
+#config_file = File.expand_path('~/mvr-colors.yaml')
+#
+#if options[:override_colors] && File.exist?(config_file)
+#  color_opts = YAML::load_file(config_file)
+#end
+#
+#color_opts.each { |opt| Format.color_profile opt[0], fgcolor: opt[1][:fg], bgcolor: opt[1][:bg] }
+
+Plugins.get :color_override
 
 pattern = ARGV.shift
+
 if pattern == 'help' || pattern == '--help' || pattern == '-h'
-  puts 'NAME'.format_bold
-  puts "    {mvr}(bdfpu) -- Renames a group of files and/or folders using a regular expression\n\n".format_all
-  puts 'SYNOPSIS'.format_bold
-  puts "    {mvr}(bdfpu) <{find}(ulfcy)> <{replace}(ulfcy)> {file ...}(fcy)\n\n".format_all
-  puts 'DESCRIPTION'.format_bold
-  puts '    {mvr}(bdfpu) is a Ruby script that allows you to rename a group of files and/or folders using a regular expression.'.format_all
-  puts '    The {find}(ulfcy) parameter uses normal regular expression syntax (there might be Ruby-specific things, but I doubt it).'.format_all
-  puts "    The {replace}(ulfcy) parameter is plain text, using {\\#}(fgr) to insert capture group {#}(fgr) (so {\\1}(fgr) to insert the first capture group).".format_all
-  puts '    The list of files can be as many items as you want, and you can use typical wildcard expressions.'
-  puts "    Any parameter after {replace}(ulfcy) will be interpreted as a file/folder name that should be included in the list of what to rename.\n\n".format_all
-  puts '    Parameters:'
-  puts '    <{find}(ulfcy)>     The regular expression for the renaming'.format_all
-  puts "    <{replace}(ulfcy)>  The text to replace what the regular expression matches (use {\\#}(fgr) to insert capture group {#}(fgr) (so {\\1}(fgr) to insert the first capture group))".format_all
-  puts '    {file ...}(fcy)   The list of files and/or folders to rename'.format_all
+  puts help_str
   exit
 end
 if ARGV.length < 2
@@ -71,18 +103,21 @@ mappings    = Hash.new
 encountered = Array.new
 duplicated  = Array.new
 ARGV.each do |filename|
-  file_basename = File.basename(filename)
-  directory     = filename[0, (filename.length - file_basename.length)]
-  file_ext      = File.extname(file_basename)
-  if options[:exclude_extension] && file_ext.length > 0
-    file_basename2       = file_basename[0...-file_ext.length]
-    replacement_basename = file_basename2.gsub(regex, replacement)
-    replacement_name     = "#{directory}#{replacement_basename}#{file_ext}"
-  else
-    replacement_basename = file_basename.gsub(regex, replacement)
-    replacement_name     = "#{directory}#{replacement_basename}"
-  end
-  mappings[filename] = replacement_name
+  file_basename        = File.basename(filename)
+  directory            = filename[0, (filename.length - file_basename.length)]
+  #file_ext      = File.extname(file_basename)
+  #if options[:exclude_extension] && file_ext.length > 0
+  #  file_basename2       = file_basename[0...-file_ext.length]
+  #  replacement_basename = file_basename2.gsub(regex, replacement)
+  #  replacement_name     = "#{directory}#{replacement_basename}#{file_ext}"
+  #else
+  #  replacement_basename = file_basename.gsub(regex, replacement)
+  #  replacement_name     = "#{directory}#{replacement_basename}"
+  #end
+  basename             = Plugins.get :name_change_before, file_basename
+  replacement_basename = Plugins.get :name_change_after, basename.gsub(regex, replacement)
+  replacement_name     = "#{directory}#{replacement_basename}"
+  mappings[filename]   = replacement_name
   if encountered.include?(replacement_name)
     unless duplicated.include?(replacement_name)
       duplicated << replacement_name
@@ -116,12 +151,12 @@ end
 border = "+#{'-' * (len1+2)}+#{'-' * (len2+2)}+"
 
 puts border
-puts "| #{'Old'.center(len1)} | #{'New'.center(len2)} |"
+puts "| #{'Old'.mycenter(len1)} | #{'New'.mycenter(len2)} |"
 puts border
 
 mappings.each do |from, to|
-  from2 = from.center(len1)
-  to2   = to.center(len2)
+  from2 = from.mycenter(len1)
+  to2   = to.mycenter(len2)
   if from == to
     from2 = "{#{from2}}(:same)"
     to2   = "{#{to2}}(:same)"
