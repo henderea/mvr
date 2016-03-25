@@ -5,7 +5,7 @@ require 'yaml'
 require 'rubygems'
 require 'everyday-cli-utils'
 include EverydayCliUtils
-import :format, :option
+import :format, :option, :ask
 
 #noinspection RubyResolve
 require 'mvr/plugin'
@@ -99,9 +99,9 @@ if ARGV.length < 2
 end
 replacement = ARGV.shift
 regex       = /#{pattern}/o
-mappings    = Hash.new
-encountered = Array.new
-duplicated  = Array.new
+mappings    = {}
+encountered = []
+duplicated  = []
 ARGV.each do |filename|
   file_basename        = File.basename(filename)
   directory            = filename[0, (filename.length - file_basename.length)]
@@ -129,24 +129,11 @@ end
 
 ARGV.clear
 
-len1 = mappings.keys.max do |a, b|
-  a.length <=> b.length
-end
+len1 = mappings.keys.map { |k| k.to_s.length }.max
+len2 = mappings.values.map { |v| v.to_s.length }.max
 
-len2 = mappings.values.max do |a, b|
-  a.length <=> b.length
-end
-
-len1 = len1.length
-len2 = len2.length
-
-if len1 < 3
-  len1 = 3
-end
-
-if len2 < 3
-  len2 = 3
-end
+len1 = 3 if len1 < 3
+len2 = 3 if len2 < 3
 
 border = "+#{'-' * (len1+2)}+#{'-' * (len2+2)}+"
 
@@ -154,7 +141,7 @@ puts border
 puts "| #{'Old'.mycenter(len1)} | #{'New'.mycenter(len2)} |"
 puts border
 
-mappings.each do |from, to|
+mappings.each { |from, to|
   from2 = from.mycenter(len1)
   to2   = to.mycenter(len2)
   if from == to
@@ -168,16 +155,12 @@ mappings.each do |from, to|
     to2   = "{#{to2}}(:normal)"
   end
   puts "| #{from2} | #{to2} |".format_all
-end
+}
 
 puts border
 
-print "\nAre you sure you want to rename these files (yes/no or y/n)? "
-response = gets.chomp
-if response.downcase == 'yes' || response.downcase == 'y'
-  mappings.each do |from, to|
-    if from != to
-      File.rename(from, to)
-    end
-  end
-end
+Ask.ask_yn("\nAre you sure you want to rename these files?", only: :yes) { |resp|
+  mappings.each { |from, to|
+    File.rename(from, to) if from != to
+  }
+}
